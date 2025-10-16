@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "razorpay": "^2.7.0",
-    "node-fetch": "^3.4.0"
+    "razorpay": "^2.7.0"
   }
 }
