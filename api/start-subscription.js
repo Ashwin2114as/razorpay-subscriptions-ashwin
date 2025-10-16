@@ -2,14 +2,12 @@
 import Razorpay from "razorpay";
 
 function sendError(res, status = 500, message = "Server error", details = null) {
-  // Always return simple JSON so frontend can show it
   const payload = { error: message };
   if (details) payload.details = details;
   res.status(status).json(payload);
 }
 
 export default async function handler(req, res) {
-  // CORS (use a fixed origin from env or * for dev)
   const origin = process.env.ALLOW_ORIGIN || "*";
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Methods", "OPTIONS,POST");
@@ -35,7 +33,6 @@ export default async function handler(req, res) {
       key_secret: process.env.RAZORPAY_KEY_SECRET,
     });
 
-    // create customer
     let customer;
     try {
       customer = await razorpay.customers.create({ name, email, contact });
@@ -44,19 +41,18 @@ export default async function handler(req, res) {
       return sendError(res, 502, "Failed to create Razorpay customer", err?.message || err);
     }
 
-    // create subscription
+    // CREATE SUBSCRIPTION: REMOVED total_count for indefinite subscription
     let subscription;
     try {
       subscription = await razorpay.subscriptions.create({
         plan_id,
         customer_notify: 1,
-        total_count: 0,
+        // total_count: 0, // removed — invalid
         customer_id: customer.id,
         notes: { name, email, contact },
       });
     } catch (err) {
       console.error("Error creating Razorpay subscription:", err);
-      // Common reason: invalid plan_id or account permission
       const errMessage = err?.error?.description || err?.message || JSON.stringify(err);
       return sendError(res, 502, "Failed to create subscription. Check plan_id and Razorpay keys", errMessage);
     }
