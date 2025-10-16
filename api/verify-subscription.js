@@ -1,6 +1,5 @@
 // api/verify-subscription.js
 import Razorpay from "razorpay";
-import fetch from "node-fetch";
 
 export default async function handler(req, res) {
   // CORS
@@ -22,7 +21,7 @@ export default async function handler(req, res) {
       key_secret: process.env.RAZORPAY_KEY_SECRET,
     });
 
-    // 1) verify payment
+    // verify payment
     let payment;
     try {
       payment = await razorpay.payments.fetch(razorpay_payment_id);
@@ -35,7 +34,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Payment not captured", payment });
     }
 
-    // 2) verify subscription
+    // verify subscription
     let subscription;
     try {
       subscription = await razorpay.subscriptions.fetch(razorpay_subscription_id);
@@ -48,8 +47,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Subscription not active", subscription });
     }
 
-    // 3) optional: persist verified submission to Google Sheet or DB
-    // If you set GS_URL env var, forward the notes to the sheet
+    // optional: persist to Google Sheets if GS_URL provided
     const notes = subscription.notes || {};
     if (process.env.GS_URL) {
       try {
@@ -61,12 +59,12 @@ export default async function handler(req, res) {
             email: notes.email,
             phone: notes.contact,
             subscription_id: razorpay_subscription_id,
-            payment_id: razorpay_payment_id
-          })
+            payment_id: razorpay_payment_id,
+          }),
         });
       } catch (err) {
         console.error("Failed to save to GS_URL:", err);
-        // continue — verification still succeeded
+        // continue: verification succeeded
       }
     }
 
