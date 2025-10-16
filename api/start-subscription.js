@@ -52,7 +52,7 @@ export default async function handler(req, res) {
     };
 
     // Use total_count if provided in request body (preferred if you want a fixed cycle count)
-    if (body.total_count && Number(body.total_count) >= 1) {
+    if (body.total_count && Number(body.total_count) >= 5) {
       subscriptionPayload.total_count = Number(body.total_count);
     } else if (process.env.SUBSCRIPTION_END_YEARS) {
       // If env var SUBSCRIPTION_END_YEARS is set, compute end_at timestamp (in seconds).
