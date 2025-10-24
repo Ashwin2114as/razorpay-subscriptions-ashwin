@@ -1,57 +1,71 @@
-import crypto from "crypto"
+// api/razorpay-webhook.js
+import crypto from "crypto";
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).json({ message: "Method not allowed" })
+  if (req.method !== "POST") return res.status(405).json({ message: "Method not allowed" });
+
+  const bodyRaw = JSON.stringify(req.body || {});
+  const signature = req.headers["x-razorpay-signature"] || req.headers["X-Razorpay-Signature"];
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  if (!secret) {
+    console.error("RAZORPAY_WEBHOOK_SECRET not set");
+    return res.status(500).json({ message: "Webhook secret not configured" });
+  }
+
+  // verify signature
+  const expected = crypto.createHmac("sha256", secret).update(bodyRaw).digest("hex");
+  if (expected !== signature) {
+    console.warn("Invalid webhook signature", { expected, signature });
+    return res.status(400).json({ message: "Invalid signature" });
+  }
 
   try {
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET
-    const zapierWebhook = process.env.ZAPIER_WEBHOOK_URL
+    const event = req.body.event;
+    const payload = req.body.payload || {};
+    const sub = payload.subscription && payload.subscription.entity;
+    const payment = payload.payment && payload.payment.entity;
+    const customer = payload.customer && payload.customer.entity;
 
-    // Razorpay sends signature in header
-    const signature = req.headers["x-razorpay-signature"]
-    const body = JSON.stringify(req.body)
+    // Preference order: subscription.notes.email -> payment.email -> customer.email
+    const email =
+      (sub && sub.notes && sub.notes.email) ||
+      (payment && payment.email) ||
+      (customer && customer.email) ||
+      null;
 
-    // Verify webhook signature
-    const expectedSignature = crypto
-      .createHmac("sha256", webhookSecret)
-      .update(body)
-      .digest("hex")
+    const name =
+      (sub && sub.notes && sub.notes.name) ||
+      (customer && customer.name) ||
+      (payment && payment.name) ||
+      null;
 
-    if (expectedSignature !== signature) {
-      return res.status(400).json({ message: "Invalid signature" })
-    }
-
-    const event = req.body.event
-    const payload = req.body.payload
-
-    // Important info from Razorpay
-    const customerEmail = payload?.subscription?.entity?.customer_notify
-      ? payload.subscription.entity.customer_notify
-      : payload?.payment?.entity?.email
-
-    const data = {
+    const forward = {
       event,
-      subscription_id: payload?.subscription?.entity?.id || null,
-      status: payload?.subscription?.entity?.status || null,
-      plan_id: payload?.subscription?.entity?.plan_id || null,
-      customer_id: payload?.subscription?.entity?.customer_id || null,
-      email: payload?.subscription?.entity?.notes?.email || customerEmail,
-      name: payload?.subscription?.entity?.notes?.name,
-      current_start: payload?.subscription?.entity?.current_start,
-      current_end: payload?.subscription?.entity?.current_end,
-      updated_at: payload?.subscription?.entity?.updated_at,
+      subscription_id: sub && sub.id,
+      status: sub && sub.status,
+      plan_id: sub && sub.plan_id,
+      customer_id: sub && sub.customer_id,
+      email,
+      name,
+      current_start: sub && sub.current_start,
+      current_end: sub && sub.current_end,
+      raw: req.body,
+    };
+
+    // Post to Zapier Catch Hook (set in Vercel env ZAPIER_WEBHOOK_URL)
+    if (process.env.ZAPIER_WEBHOOK_URL) {
+      await fetch(process.env.ZAPIER_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(forward),
+      });
+    } else {
+      console.warn("ZAPIER_WEBHOOK_URL missing; skipping forward.");
     }
 
-    // Forward event to Zapier
-    await fetch(zapierWebhook, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    })
-
-    return res.status(200).json({ message: "Webhook processed", event })
+    return res.status(200).json({ ok: true });
   } catch (err) {
-    console.error("Webhook error:", err)
-    return res.status(500).json({ message: "Server error", error: err.message })
+    console.error("Webhook handler error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
   }
 }
